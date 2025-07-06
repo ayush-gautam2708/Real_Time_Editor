@@ -1,7 +1,7 @@
 const WebSocket = require('ws');
 const jwt = require('jsonwebtoken');
 const mongoose = require('mongoose');
-const Document = require('./models/Document'); // <-- import your model
+const Document = require('../models/Document'); // <-- import your model
 const rooms = new Map(); // { roomId: Set of sockets }
 const SECRET = process.env.JWT_SECRET;
 

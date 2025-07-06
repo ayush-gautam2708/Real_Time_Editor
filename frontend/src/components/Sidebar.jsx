@@ -26,17 +26,28 @@ const Sidebar = ({ selectedDocId, onSelectDoc }) => {
 
   const createDocument = async () => {
     try {
-      const res = await fetch('http://localhost:5000/api/docs', {
+      const res = await fetch('http://localhost:5000/api/docs/create', {
         method: 'POST',
         headers: {
+          'Content-Type': 'application/json',
           Authorization: `Bearer ${localStorage.getItem('token')}`,
         },
+        body: JSON.stringify({}), // 👈 required to avoid body-parser issues
       });
+
       const data = await res.json();
+
+      if (!res.ok) {
+        console.error('Error creating document:', data.error || res.statusText);
+        alert(`Failed to create document: ${data.error || res.statusText}`);
+        return;
+      }
+
       fetchDocs();
-      onSelectDoc(data); // Select newly created doc
+      onSelectDoc(data); // select newly created doc
     } catch (err) {
       console.error('Error creating document:', err);
+      alert('Something went wrong creating the document');
     }
   };
 

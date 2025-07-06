@@ -4,6 +4,9 @@ import Sidebar from './Sidebar';
 const Home = () => {
   const [selectedDoc, setSelectedDoc] = useState(null);
   const [content, setContent] = useState('');
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [collabUsername, setCollabUsername] = useState('');
+  const [shareStatus, setShareStatus] = useState('');
   const socketRef = useRef(null);
   const timeoutRef = useRef(null);
 
@@ -65,7 +68,6 @@ const Home = () => {
     const newContent = e.target.value;
     setContent(newContent);
 
-    // Send to WebSocket
     if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
       socketRef.current.send(JSON.stringify({
         type: 'content-change',
@@ -73,11 +75,10 @@ const Home = () => {
       }));
     }
 
-    // Debounced save to backend
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     timeoutRef.current = setTimeout(() => {
       saveContent(newContent);
-    }, 1000); // 1 sec debounce
+    }, 1000);
   };
 
   const saveContent = async (newContent) => {
@@ -96,6 +97,26 @@ const Home = () => {
     }
   };
 
+  const handleShare = async () => {
+    if (!collabUsername) return;
+    try {
+      const res = await fetch(`http://localhost:5000/api/docs/${selectedDoc._id}/share`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        },
+        body: JSON.stringify({ username: collabUsername }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Sharing failed');
+      setShareStatus('Collaborator added successfully!');
+      setCollabUsername('');
+    } catch (err) {
+      setShareStatus(`Error: ${err.message}`);
+    }
+  };
+
   return (
     <div className="flex h-screen">
       <Sidebar
@@ -103,10 +124,19 @@ const Home = () => {
         selectedDocId={selectedDoc?._id}
       />
 
-      <div className="flex-1 p-6">
+      <div className="flex-1 p-6 relative">
         {selectedDoc ? (
           <>
-            <h2 className="text-xl font-semibold mb-4">{selectedDoc.title || 'Untitled Document'}</h2>
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-semibold">{selectedDoc.title || 'Untitled Document'}</h2>
+              <button
+                onClick={() => setShowShareModal(true)}
+                className="px-4 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
+              >
+                Share
+              </button>
+            </div>
+
             <textarea
               value={content}
               onChange={handleChange}
@@ -117,6 +147,39 @@ const Home = () => {
         ) : (
           <div className="text-gray-500 flex items-center justify-center h-full">
             Select a document to start editing
+          </div>
+        )}
+
+        {/* Share Modal */}
+        {showShareModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg shadow-lg p-6 w-96">
+              <h3 className="text-lg font-semibold mb-4">Share Document</h3>
+              <input
+                type="text"
+                value={collabUsername}
+                onChange={(e) => setCollabUsername(e.target.value)}
+                placeholder="Enter collaborator's username"
+                className="w-full border p-2 mb-3 rounded"
+              />
+              <button
+                onClick={handleShare}
+                className="w-full bg-green-600 text-white py-2 rounded hover:bg-green-700 mb-2"
+              >
+                Add Collaborator
+              </button>
+              <p className="text-sm text-center text-gray-600">{shareStatus}</p>
+              <button
+                onClick={() => {
+                  setShowShareModal(false);
+                  setShareStatus('');
+                  setCollabUsername('');
+                }}
+                className="w-full mt-3 py-1 text-gray-600 hover:text-gray-800"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         )}
       </div>

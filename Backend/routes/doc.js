@@ -3,29 +3,36 @@ const router = express.Router();
 const Document = require('../models/Document');
 const verifyToken = require('../middlewares/verifyToken');
 
-// Create a new document
+//Create a document
 router.post('/create', verifyToken, async (req, res) => {
   try {
     const doc = new Document({
       title: req.body.title || 'Untitled Document',
-      owner: req.user.id,
+      owner: req.user.id, // Make sure this is correct — might be req.user._id
     });
     const saved = await doc.save();
     res.status(201).json(saved);
   } catch (err) {
-    res.status(500).json({ error: 'Failed to create document' });
+    console.error('Error creating document:', err); // Show full error
+    res.status(500).json({ error: err.message || 'Failed to create document' });
   }
 });
 
-// Get all documents owned by the user
+// Get all documents owned & collaborated  by the user
 router.get('/', verifyToken, async (req, res) => {
   try {
-    const docs = await Document.find({ owner: req.user.id });
+    const docs = await Document.find({
+      $or: [
+        { owner: req.user.id },
+        { collaborators: req.user.id },
+      ]
+    });
     res.json(docs);
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch documents' });
   }
 });
+
 
 // Get a single document by ID (if user is owner or collaborator)
 router.get('/:id', verifyToken, async (req, res) => {
@@ -62,7 +69,7 @@ router.put('/:id/rename', verifyToken, async (req, res) => {
     if (!title) return res.status(400).json({ error: 'Title is required' });
 
     const doc = await Document.findOneAndUpdate(
-      { _id: req.params.id, owner: req.user.id },  // ✅ Fixed this line
+      { _id: req.params.id, owner: req.user.id },  //
       { title },
       { new: true }
     );
