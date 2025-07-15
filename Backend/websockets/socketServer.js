@@ -1,8 +1,9 @@
 const WebSocket = require('ws');
 const jwt = require('jsonwebtoken');
 const mongoose = require('mongoose');
-const Document = require('../models/Document'); // <-- import your model
-const rooms = new Map(); // { roomId: Set of sockets }
+const Document = require('../models/Document');
+
+const rooms = new Map(); // roomId -> Set of clients
 const SECRET = process.env.JWT_SECRET;
 
 function setupWebSocket(server) {
@@ -16,7 +17,7 @@ function setupWebSocket(server) {
     try {
       if (!token) throw new Error('Missing token');
       user = jwt.verify(token, SECRET);
-      ws.user = user; // Attach decoded user info to socket
+      ws.user = user; // Attach user object to socket
     } catch (err) {
       console.error('WebSocket auth error:', err.message);
       ws.close();
@@ -30,6 +31,7 @@ function setupWebSocket(server) {
         const data = JSON.parse(msg);
         const { type, payload } = data;
 
+        // ✅ JOIN ROOM
         if (type === 'join-room') {
           const roomId = payload.roomId;
           const document = await Document.findById(roomId);
@@ -55,8 +57,9 @@ function setupWebSocket(server) {
           rooms.get(currentRoom).add(ws);
         }
 
-        if (type === 'content-change' && currentRoom) {
-          rooms.get(currentRoom).forEach((client) => {
+        // ✅ SYNC CONTENT
+        else if (type === 'content-change' && currentRoom) {
+          rooms.get(currentRoom).forEach(client => {
             if (client !== ws && client.readyState === WebSocket.OPEN) {
               client.send(JSON.stringify({
                 type: 'content-change',
@@ -65,8 +68,39 @@ function setupWebSocket(server) {
             }
           });
         }
+
+        // ✅ CHAT MESSAGE BROADCAST + SAVE TO DB
+        else if (type === 'chat-message' && currentRoom) {
+          const username = ws.user.username || 'User';
+          const chatMessage = {
+            user: username,
+            message: payload.message,
+            timestamp: new Date()
+          };
+
+          // Broadcast to all clients in room
+          const messagePayload = {
+            type: 'chat-message',
+            payload: {
+              ...chatMessage,
+              timestamp: chatMessage.timestamp.toISOString()
+            }
+          };
+
+          rooms.get(currentRoom).forEach(client => {
+            if (client.readyState === WebSocket.OPEN) {
+              client.send(JSON.stringify(messagePayload));
+            }
+          });
+
+          // Save message to MongoDB
+          await Document.findByIdAndUpdate(currentRoom, {
+            $push: { messages: chatMessage }
+          });
+        }
+
       } catch (err) {
-        console.error('WebSocket Error:', err.message);
+        console.error('WebSocket message error:', err.message);
       }
     });
 

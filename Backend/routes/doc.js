@@ -143,5 +143,25 @@ router.post('/:id/share', verifyToken, async (req, res) => {
   }
 });
 
+router.get('/:id/messages', verifyToken, async (req, res) => {
+  try {
+    const doc = await Document.findById(req.params.id);
+    if (!doc) return res.status(404).json({ error: 'Document not found' });
+
+    // Check if user is authorized (owner or collaborator)
+    if (
+      doc.owner.toString() !== req.user.id &&
+      !doc.collaborators.includes(req.user.id)
+    ) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    res.json(doc.messages || []);
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+
 
 module.exports = router;

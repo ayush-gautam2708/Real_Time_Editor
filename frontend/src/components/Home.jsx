@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import Sidebar from './Sidebar';
+import ChatBox from './ChatBox';
+import { jwtDecode } from 'jwt-decode';
 
 const Home = () => {
   const [selectedDoc, setSelectedDoc] = useState(null);
@@ -7,14 +9,17 @@ const Home = () => {
   const [showShareModal, setShowShareModal] = useState(false);
   const [collabUsername, setCollabUsername] = useState('');
   const [shareStatus, setShareStatus] = useState('');
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [chatHistory, setChatHistory] = useState([]); // 🆕 For chat history
   const socketRef = useRef(null);
   const timeoutRef = useRef(null);
 
-  // Fetch content when document is selected
+  const userId = jwtDecode(localStorage.getItem('token'))?.id;
+
   useEffect(() => {
     if (!selectedDoc) return;
 
-    const fetchDocContent = async () => {
+    const fetchDocData = async () => {
       try {
         const res = await fetch(`http://localhost:5000/api/docs/${selectedDoc._id}`, {
           headers: {
@@ -24,15 +29,15 @@ const Home = () => {
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Failed to fetch document');
         setContent(data.content || '');
+        setChatHistory(data.messages || []); // 🆕 Store chat messages
       } catch (err) {
         console.error(err.message);
       }
     };
 
-    fetchDocContent();
+    fetchDocData();
   }, [selectedDoc]);
 
-  // Setup WebSocket connection
   useEffect(() => {
     if (!selectedDoc) return;
 
@@ -41,7 +46,9 @@ const Home = () => {
       console.error("Token missing: can't connect WebSocket");
       return;
     }
+
     socketRef.current = new WebSocket(`ws://localhost:5000?token=${token}`);
+
     socketRef.current.onopen = () => {
       socketRef.current.send(JSON.stringify({
         type: 'join-room',
@@ -51,8 +58,13 @@ const Home = () => {
 
     socketRef.current.onmessage = (msg) => {
       const { type, payload } = JSON.parse(msg.data);
+
       if (type === 'content-change') {
         setContent(payload.content);
+      }
+
+      if (type === 'chat-message') {
+        setChatHistory((prev) => [...prev, payload]);
       }
     };
 
@@ -63,7 +75,6 @@ const Home = () => {
     };
   }, [selectedDoc]);
 
-  // Handle typing (and sync)
   const handleChange = (e) => {
     const newContent = e.target.value;
     setContent(newContent);
@@ -180,6 +191,29 @@ const Home = () => {
                 Cancel
               </button>
             </div>
+          </div>
+        )}
+
+        {/* Chat Toggle Button */}
+        {selectedDoc && !isChatOpen && (
+          <button
+            onClick={() => setIsChatOpen(true)}
+            className="fixed bottom-6 right-6 bg-blue-600 text-white px-4 py-2 rounded-full shadow-lg hover:bg-blue-700 z-50"
+          >
+            💬
+          </button>
+        )}
+
+        {/* Chatbox */}
+        {selectedDoc && isChatOpen && (
+          <div className="absolute bottom-6 right-6 z-50">
+            <ChatBox
+              socketRef={socketRef}
+              docId={selectedDoc._id}
+              userId={userId}
+              closeChat={() => setIsChatOpen(false)}
+              chatHistory={chatHistory} //
+            />
           </div>
         )}
       </div>
