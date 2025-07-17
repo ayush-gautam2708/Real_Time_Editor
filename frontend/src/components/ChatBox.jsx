@@ -1,74 +1,29 @@
-import React, { useEffect, useState, useRef, useMemo } from "react";
-import { jwtDecode } from "jwt-decode";
+import React, { useEffect, useState, useRef, useMemo } from 'react';
+import { jwtDecode } from 'jwt-decode';
 
-const ChatBox = ({ socketRef, isOpen, closeChat, docId }) => {
-  const [input, setInput] = useState("");
-  const [messages, setMessages] = useState([]);
+// Take chatHistory directly from props and remove isOpen
+const ChatBox = ({ socketRef, closeChat, docId, chatHistory }) => {
+  const [input, setInput] = useState('');
   const messagesEndRef = useRef(null);
-  const token = localStorage.getItem("token");
+  const token = localStorage.getItem('token');
 
-  // Safely decode token
-  const decodedToken = useMemo(() => {
+  const username = useMemo(() => {
     try {
-      return jwtDecode(token);
+      return jwtDecode(token).username;
     } catch (err) {
-      console.error("Failed to decode token:", err);
-      return {};
+      console.error('Failed to decode token:', err);
+      return 'User';
     }
   }, [token]);
 
-  const username = decodedToken.username;
-
-  // Load old messages
-  useEffect(() => {
-    const fetchMessages = async () => {
-      try {
-        const res = await fetch(`http://localhost:5000/api/docs/${docId}/messages`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const data = await res.json();
-        console.log("Fetched messages:", data);
-        setMessages(data.map(msg => ({
-          user: msg.user,
-          text: msg.message,
-          timestamp: msg.timestamp,
-        })));
-      } catch (err) {
-        console.error("Failed to load messages:", err.message);
-      }
-    };
-
-    if (docId && isOpen) fetchMessages();
-  }, [docId, isOpen, token]);
-
-  // WebSocket listener
-  useEffect(() => {
-    if (!socketRef.current) return;
-
-    const socket = socketRef.current;
-    socket.onmessage = (msg) => {
-      const { type, payload } = JSON.parse(msg.data);
-      if (type === "chat-message") {
-        console.log("Received chat message:", payload);
-        setMessages((prev) => [...prev, {
-          user: payload.user,
-          text: payload.message,
-          timestamp: new Date().toISOString()
-        }]);
-      }
-    };
-
-    return () => {
-      // Optional cleanup
-    };
-  }, [socketRef]);
+  // The chatHistory is now managed by the Home component, so we don't need to fetch it here.
+  // We also don't need the onmessage listener, because Home.jsx already handles it.
 
   const sendMessage = () => {
-    if (!input.trim()) return;
-    if (!username) return console.error("Username not found in token");
+    if (!input.trim() || !username) return;
 
     const messageObj = {
-      type: "chat-message",
+      type: 'chat-message',
       payload: {
         roomId: docId,
         message: input.trim(),
@@ -76,14 +31,15 @@ const ChatBox = ({ socketRef, isOpen, closeChat, docId }) => {
       },
     };
 
-    socketRef.current.send(JSON.stringify(messageObj));
-    setInput("");
+    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+      socketRef.current.send(JSON.stringify(messageObj));
+    }
+    setInput('');
   };
 
-  // Scroll to bottom on new message
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chatHistory]); // Depend on the chatHistory prop
 
   return (
     <div className="w-80 h-96 bg-white shadow-lg rounded-lg flex flex-col">
@@ -93,14 +49,15 @@ const ChatBox = ({ socketRef, isOpen, closeChat, docId }) => {
       </div>
 
       <div className="flex-1 overflow-y-auto p-3 space-y-2 text-sm">
-        {messages.map((msg, idx) => (
+        {/* Use the chatHistory prop directly */}
+        {chatHistory.map((msg, idx) => (
           <div
             key={idx}
             className={`p-2 rounded text-sm whitespace-pre-line ${
               msg.user === username ? 'bg-blue-100 self-end ml-10 text-right' : 'bg-gray-100 mr-10 text-left'
             }`}
           >
-            <strong>{msg.user || "Unknown"}:</strong> {msg.text}
+            <strong>{msg.user || 'Unknown'}:</strong> {msg.message || msg.text}
           </div>
         ))}
         <div ref={messagesEndRef} />
@@ -112,7 +69,7 @@ const ChatBox = ({ socketRef, isOpen, closeChat, docId }) => {
           placeholder="Type a message..."
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && sendMessage()}
+          onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
         />
         <button
           onClick={sendMessage}

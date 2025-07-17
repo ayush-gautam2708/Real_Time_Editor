@@ -10,9 +10,11 @@ const Home = () => {
   const [collabUsername, setCollabUsername] = useState('');
   const [shareStatus, setShareStatus] = useState('');
   const [isChatOpen, setIsChatOpen] = useState(false);
-  const [chatHistory, setChatHistory] = useState([]); // 🆕 For chat history
+  const [chatHistory, setChatHistory] = useState([]);
   const socketRef = useRef(null);
   const timeoutRef = useRef(null);
+
+  const [showFileMenu, setShowFileMenu] = useState(false);
 
   const userId = jwtDecode(localStorage.getItem('token'))?.id;
 
@@ -22,14 +24,12 @@ const Home = () => {
     const fetchDocData = async () => {
       try {
         const res = await fetch(`http://localhost:5000/api/docs/${selectedDoc._id}`, {
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('token')}`,
-          },
+          headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` },
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Failed to fetch document');
         setContent(data.content || '');
-        setChatHistory(data.messages || []); // 🆕 Store chat messages
+        setChatHistory(data.messages || []);
       } catch (err) {
         console.error(err.message);
       }
@@ -47,6 +47,10 @@ const Home = () => {
       return;
     }
 
+    if (socketRef.current) {
+      socketRef.current.close();
+    }
+
     socketRef.current = new WebSocket(`ws://localhost:5000?token=${token}`);
 
     socketRef.current.onopen = () => {
@@ -58,15 +62,15 @@ const Home = () => {
 
     socketRef.current.onmessage = (msg) => {
       const { type, payload } = JSON.parse(msg.data);
-
       if (type === 'content-change') {
         setContent(payload.content);
       }
-
       if (type === 'chat-message') {
         setChatHistory((prev) => [...prev, payload]);
       }
     };
+
+    setShowFileMenu(false);
 
     return () => {
       if (socketRef.current) {
@@ -128,40 +132,90 @@ const Home = () => {
     }
   };
 
+  const handleDownload = () => {
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${selectedDoc.title || 'Untitled Document'}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setShowFileMenu(false);
+  };
+
   return (
-    <div className="flex h-screen">
+    <div className="flex h-screen bg-gray-100">
       <Sidebar
         onSelectDoc={setSelectedDoc}
         selectedDocId={selectedDoc?._id}
       />
 
-      <div className="flex-1 p-6 relative">
+      <div className="flex-1 flex flex-col">
         {selectedDoc ? (
           <>
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-semibold">{selectedDoc.title || 'Untitled Document'}</h2>
-              <button
-                onClick={() => setShowShareModal(true)}
-                className="px-4 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
-              >
-                Share
-              </button>
-            </div>
+            <div className="bg-white shadow-sm p-2 flex items-center justify-between z-10">
+              <div className="flex items-center">
+                <h2 className="text-xl font-semibold text-gray-700 ml-4">{selectedDoc.title || 'Untitled Document'}</h2>
+                
+                <div className="relative ml-6">
+                  <button onClick={() => setShowFileMenu(!showFileMenu)} className="px-3 py-1 text-sm hover:bg-gray-200 rounded">
+                    File
+                  </button>
+                  {showFileMenu && (
+                    <div className="absolute top-8 left-0 w-48 bg-white border rounded shadow-lg">
+                      <button 
+                        onClick={() => alert('Rename functionality can be hooked up here!')}
+                        className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                      >
+                        Rename
+                      </button>
+                      <button 
+                        onClick={handleDownload}
+                        className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                      >
+                        Download (.txt)
+                      </button>
+                      <button 
+                        onClick={() => alert('Delete functionality can be hooked up here!')}
+                        className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+              
+              <div className="flex items-center">
+                <div className="flex -space-x-2 mr-4">
+                  <div className="w-8 h-8 bg-purple-500 rounded-full border-2 border-white flex items-center justify-center text-white text-xs font-bold">A</div>
+                  <div className="w-8 h-8 bg-green-500 rounded-full border-2 border-white flex items-center justify-center text-white text-xs font-bold">B</div>
+                </div>
 
-            <textarea
-              value={content}
-              onChange={handleChange}
-              className="w-full h-[85vh] p-4 border rounded-md focus:outline-none resize-none font-mono text-sm"
-              placeholder="Start editing..."
-            />
+                <button
+                  onClick={() => setShowShareModal(true)}
+                  className="px-4 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm font-semibold"
+                >
+                  Share
+                </button>
+              </div>
+            </div>
+            
+            <div className="flex-1 p-6 relative">
+              <textarea
+                value={content}
+                onChange={handleChange}
+                className="w-full h-full p-8 border rounded-md shadow-inner focus:outline-none resize-none font-mono text-base"
+                placeholder="Start editing..."
+              />
+            </div>
           </>
         ) : (
           <div className="text-gray-500 flex items-center justify-center h-full">
-            Select a document to start editing
+            Select or create a document to start editing
           </div>
         )}
 
-        {/* Share Modal */}
         {showShareModal && (
           <div className="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50">
             <div className="bg-white rounded-lg shadow-lg p-6 w-96">
@@ -194,7 +248,6 @@ const Home = () => {
           </div>
         )}
 
-        {/* Chat Toggle Button */}
         {selectedDoc && !isChatOpen && (
           <button
             onClick={() => setIsChatOpen(true)}
@@ -203,8 +256,6 @@ const Home = () => {
             💬
           </button>
         )}
-
-        {/* Chatbox */}
         {selectedDoc && isChatOpen && (
           <div className="absolute bottom-6 right-6 z-50">
             <ChatBox
@@ -212,7 +263,7 @@ const Home = () => {
               docId={selectedDoc._id}
               userId={userId}
               closeChat={() => setIsChatOpen(false)}
-              chatHistory={chatHistory} //
+              chatHistory={chatHistory}
             />
           </div>
         )}
